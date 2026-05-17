@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biomecánica Matemática: Aves Paceñas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; }
+        .canvas-container { position: relative; height: 300px; width: 100%; }
+        canvas { background-color: white; border-radius: 0.5rem; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
+    </style>
+</head>
+<body class="p-6 text-slate-800">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 border-b pb-4">
+            <h1 class="text-3xl font-bold text-blue-900">Desafío Final: Biomecánica Matemática de las Aves Paceñas</h1>
+            <p class="text-lg text-slate-600 mt-2">Modelo interactivo de Aleteo (Interpolación por Splines Cúbicos y Fourier)</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Panel de Control y Simulación -->
+            <div class="lg:col-span-1 space-y-6">
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h2 class="text-xl font-semibold mb-4 border-b pb-2">1. Parámetros Biológicos</h2>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Frecuencia Real de Aleteo (Hz)</label>
+                        <input type="range" id="freqInput" min="4" max="30" value="15" step="0.5" class="w-full mt-2">
+                        <div class="flex justify-between text-xs text-gray-500 mt-1 px-1">
+                            <span>4Hz</span>
+                            <span>10Hz</span>
+                            <span>15Hz</span>
+                            <span>30Hz</span>
+                        </div>
+                        <p class="text-sm mt-3 font-medium text-blue-900 bg-blue-50 p-2 rounded border border-blue-100">
+                            Frecuencia: <span id="freqValor" class="font-bold text-blue-700">15 Hz</span> <br>
+                            Especie: <span id="aveValor" class="italic text-slate-600">Colibrí Gigante</span>
+                        </p>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Ruido de Medición (Error humano en Tracker)</label>
+                        <input type="range" id="noiseInput" min="0" max="5" value="1.5" step="0.1" class="w-full mt-2">
+                        <div class="flex justify-between text-xs text-gray-500">
+                            <span>Perfecto</span>
+                            <span id="noiseValor">1.5</span>
+                            <span>Inexacto</span>
+                        </div>
+                    </div>
+
+                    <button onclick="ejecutarModelo()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors">
+                        Calcular Matrices y Simular
+                    </button>
+
+                    <div class="mt-6 p-4 bg-slate-50 rounded border">
+                        <h3 class="font-semibold text-sm text-slate-500 uppercase tracking-wider mb-2">Validación Fourier</h3>
+                        <p>Frecuencia Detectada: <span id="frecuenciaDetectada" class="font-bold text-green-600 text-lg">-- Hz</span></p>
+                        <p class="text-xs text-slate-500 mt-1">El modelo matemático filtra el ruido y encuentra el ritmo biológico exacto de la especie paceña seleccionada.</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h2 class="text-xl font-semibold mb-2 border-b pb-2">4. Simulación Comparativa</h2>
+                    <p class="text-xs text-gray-600 mb-4">Punta del ala: Dato Matemático (Izquierda) vs Dato Crudo de Video (Derecha).</p>
+                    <canvas id="animacionCanvas" width="300" height="200" class="w-full border bg-sky-50"></canvas>
+                </div>
+            </div>
+
+            <!-- Gráficas Matemáticas -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Gráfica 1: Splines -->
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h2 class="text-lg font-semibold mb-2">2. Interpolación Spline Cúbico (Continuidad $C^0$)</h2>
+                    <div class="canvas-container">
+                        <canvas id="chartPosicion"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfica 2: Derivadas -->
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h2 class="text-lg font-semibold mb-2">Suavidad Cinemática: Velocidad ($C^1$) y Aceleración ($C^2$)</h2>
+                    <div class="canvas-container">
+                        <canvas id="chartDerivadas"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfica 3: Fourier -->
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h2 class="text-lg font-semibold mb-2">3. Análisis de Frecuencia de Fourier (Espectro)</h2>
+                    <div class="canvas-container">
+                        <canvas id="chartFourier"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. CLASE SPLINE CÚBICO (Matemática Core)
+        // ==========================================
+        class SplineCubico {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.n = x.length;
+                this.a = [...y];
+                this.b = new Array(this.n).fill(0);
+                this.c = new Array(this.n).fill(0);
+                this.d = new Array(this.n).fill(0);
+                this.calcularCoeficientes();
+            }
+
+            calcularCoeficientes() {
+                let n = this.n - 1;
+                let h = [];
+                let alpha = new Array(n).fill(0);
+
+                for (let i = 0; i < n; i++) h.push(this.x[i+1] - this.x[i]);
+                
+                for (let i = 1; i < n; i++) {
+                    alpha[i] = (3 / h[i]) * (this.a[i+1] - this.a[i]) - (3 / h[i-1]) * (this.a[i] - this.a[i-1]);
+                }
+
+                let l = new Array(n + 1).fill(1);
+                let mu = new Array(n + 1).fill(0);
+                let z = new Array(n + 1).fill(0);
+
+                for (let i = 1; i < n; i++) {
+                    l[i] = 2 * (this.x[i+1] - this.x[i-1]) - h[i-1] * mu[i-1];
+                    mu[i] = h[i] / l[i];
+                    z[i] = (alpha[i] - h[i-1] * z[i-1]) / l[i];
+                }
+
+                l[n] = 1;
+                z[n] = 0;
+                this.c[n] = 0;
+
+                for (let j = n - 1; j >= 0; j--) {
+                    this.c[j] = z[j] - mu[j] * this.c[j+1];
+                    this.b[j] = (this.a[j+1] - this.a[j]) / h[j] - h[j] * (this.c[j+1] + 2 * this.c[j]) / 3;
+                    this.d[j] = (this.c[j+1] - this.c[j]) / (3 * h[j]);
+                }
+            }
+
+            obtenerSegmento(t) {
+                let i = 0;
+                while (i < this.n - 2 && t > this.x[i+1]) i++;
+                return i;
+            }
+
+            posicion(t) {
+                let i = this.obtenerSegmento(t);
+                let dx = t - this.x[i];
+                return this.a[i] + this.b[i]*dx + this.c[i]*dx*dx + this.d[i]*dx*dx*dx;
+            }
+
+            velocidad(t) {
+                let i = this.obtenerSegmento(t);
+                let dx = t - this.x[i];
+                return this.b[i] + 2*this.c[i]*dx + 3*this.d[i]*dx*dx;
+            }
+
+            aceleracion(t) {
+                let i = this.obtenerSegmento(t);
+                let dx = t - this.x[i];
+                return 2*this.c[i] + 6*this.d[i]*dx;
+            }
+        }
+
+        // ==========================================
+        // 2. TRANSFORMADA DE FOURIER
+        // ==========================================
+        function calcularDFT(y_suave, dt, maxFreq) {
+            let N = y_suave.length;
+            let frecuencias = [];
+            let magnitudes = [];
+            let frecFundamental = 0;
+            let maxMag = 0;
+
+            for (let f = 0.5; f <= maxFreq; f += 0.2) {
+                let re = 0;
+                let im = 0;
+                for (let n = 0; n < N; n++) {
+                    let angle = 2 * Math.PI * f * (n * dt);
+                    re += y_suave[n] * Math.cos(angle);
+                    im -= y_suave[n] * Math.sin(angle);
+                }
+                let mag = (2 / N) * Math.sqrt(re*re + im*im);
+                frecuencias.push(f);
+                magnitudes.push(mag);
+
+                if (mag > maxMag) {
+                    maxMag = mag;
+                    frecFundamental = f;
+                }
+            }
+            return { frecuencias, magnitudes, frecFundamental };
+        }
+
+        // ==========================================
+        // UI & LÓGICA PRINCIPAL
+        // ==========================================
+        let charts = {};
+        let animacionId;
+        let splineActual = null;
+        let tiempoTotal = 0.5; 
+
+        function obtenerEspecie(hz) {
+            if (hz <= 7) return "Paloma (Columba livia)";
+            if (hz > 7 && hz <= 12) return "Cernícalo / Killi Killi";
+            if (hz > 12 && hz <= 20) return "Colibrí Gigante";
+            return "Picaflor de los Andes (Sparkling Violetear)";
+        }
+
+        document.getElementById('freqInput').addEventListener('input', function() {
+            let valor = parseFloat(this.value);
+            document.getElementById('freqValor').innerText = valor + ' Hz';
+            document.getElementById('aveValor').innerText = obtenerEspecie(valor);
+        });
+
+        document.getElementById('noiseInput').addEventListener('input', function() {
+            document.getElementById('noiseValor').innerText = this.value;
+        });
+
+        function normalizar(arr) {
+            let max = Math.max(...arr.map(Math.abs));
+            return arr.map(v => v / max);
+        }
+
+        function ejecutarModelo() {
+            let freqReal = parseFloat(document.getElementById('freqInput').value);
+            let ruidoMag = parseFloat(document.getElementById('noiseInput').value);
+            
+            let fps = 120;
+            let numPuntos = Math.floor(tiempoTotal * fps);
+            let t_datos = [];
+            let y_datos = [];
+
+            for (let i = 0; i <= numPuntos; i++) {
+                let t = i / fps;
+                t_datos.push(t);
+                let ruido = (Math.random() - 0.5) * 2 * ruidoMag; 
+                y_datos.push(10 * Math.sin(2 * Math.PI * freqReal * t) + ruido);
+            }
+
+            splineActual = new SplineCubico(t_datos, y_datos);
+
+            let t_suave = [], y_suave = [], v_suave = [], a_suave = [];
+            let dt_suave = tiempoTotal / 500;
+
+            for(let t = 0; t <= tiempoTotal; t += dt_suave) {
+                t_suave.push(t);
+                y_suave.push(splineActual.posicion(t));
+                v_suave.push(splineActual.velocidad(t));
+                a_suave.push(splineActual.aceleracion(t));
+            }
+
+            let fourier = calcularDFT(y_suave, dt_suave, 40);
+            document.getElementById('frecuenciaDetectada').innerText = fourier.frecFundamental.toFixed(1) + ' Hz';
+
+            actualizarGraficas(t_datos, y_datos, t_suave, y_suave, normalizar(v_suave), normalizar(a_suave), fourier);
+            iniciarAnimacion();
+        }
+
+        function actualizarGraficas(t_datos, y_datos, t_suave, y_suave, v_suave, a_suave, fourier) {
+            Chart.defaults.font.family = "'Segoe UI', sans-serif";
+            Object.values(charts).forEach(c => c.destroy());
+
+            let ctxPos = document.getElementById('chartPosicion').getContext('2d');
+            charts.pos = new Chart(ctxPos, {
+                type: 'line',
+                data: {
+                    labels: t_suave.map(t => t.toFixed(3)),
+                    datasets: [
+                        { label: 'Modelo Matemático (Spline)', data: y_suave, borderColor: '#2563eb', borderWidth: 2, tension: 0, pointRadius: 0 },
+                        { label: 'Datos de Video (Tracker)', data: t_datos.map((t, i) => ({x: t.toFixed(3), y: y_datos[i]})), backgroundColor: '#ef4444', borderColor: '#ef4444', type: 'scatter', pointRadius: 4 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { title: { display: true, text: 'Posición Y (Punta del Ala)' } } } }
+            });
+
+            let ctxDer = document.getElementById('chartDerivadas').getContext('2d');
+            charts.der = new Chart(ctxDer, {
+                type: 'line',
+                data: {
+                    labels: t_suave.map(t => t.toFixed(3)),
+                    datasets: [
+                        { label: 'Velocidad Normalizada (C¹)', data: v_suave, borderColor: '#16a34a', borderDash: [5, 5], borderWidth: 2, pointRadius: 0 },
+                        { label: 'Aceleración Normalizada (C²)', data: a_suave, borderColor: '#d97706', borderDash: [2, 2], borderWidth: 2, pointRadius: 0 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { x: { display: false } } }
+            });
+
+            let ctxFou = document.getElementById('chartFourier').getContext('2d');
+            charts.fou = new Chart(ctxFou, {
+                type: 'bar',
+                data: {
+                    labels: fourier.frecuencias.map(f => f.toFixed(1)),
+                    datasets: [{ label: 'Espectro de Frecuencia', data: fourier.magnitudes, backgroundColor: '#8b5cf6' }]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, 
+                    plugins: { annotation: { annotations: { line1: { type: 'line', xMin: fourier.frecFundamental, xMax: fourier.frecFundamental, borderColor: 'red', borderWidth: 2 } } } }
+                }
+            });
+        }
+
+        // ==========================================
+        // 3. ANIMACIÓN COMPARATIVA (PUNTOS)
+        // ==========================================
+        let inicioAnimacion = null;
+        
+        function iniciarAnimacion() {
+            if(animacionId) cancelAnimationFrame(animacionId);
+            inicioAnimacion = performance.now();
+            animacionId = requestAnimationFrame(dibujarFrame);
+        }
+
+        function dibujarFrame(timestamp) {
+            let canvas = document.getElementById('animacionCanvas');
+            let ctx = canvas.getContext('2d');
+            
+            let tReal = (timestamp - inicioAnimacion) / 1000; 
+            let t = tReal % tiempoTotal;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            let centroY = canvas.height / 2;
+            let amplitudEscala = 5;
+
+            // Dibujar línea central (Referencia del Cuerpo)
+            ctx.beginPath();
+            ctx.moveTo(30, centroY);
+            ctx.lineTo(270, centroY);
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Dato Matemático Perfecto (Spline)
+            let yMath = centroY - (splineActual.posicion(t) * amplitudEscala);
+            
+            // Dato Crudo con Ruido (Simulando el video)
+            let freqReal = parseFloat(document.getElementById('freqInput').value);
+            let ruidoMag = parseFloat(document.getElementById('noiseInput').value);
+            let yRaw = centroY - (10 * Math.sin(2 * Math.PI * freqReal * t) * amplitudEscala);
+            // Añadir salto visual de ruido esporádico en el ala del "video"
+            if(Math.random() > 0.8) yRaw += (Math.random() - 0.5) * (ruidoMag * 15); 
+
+            // Punto Izquierdo: Ala Matemática
+            ctx.fillStyle = '#2563eb';
+            ctx.beginPath();
+            ctx.arc(80, yMath, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#1e3a8a';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText("Modelo Spline", 45, yMath - 15);
+
+            // Punto Derecho: Ala de Video (Tracker)
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.arc(220, yRaw, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#7f1d1d';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText("Video (Tracker)", 185, yRaw - 15);
+
+            // Conexiones visuales al cuerpo
+            ctx.beginPath();
+            ctx.moveTo(80, yMath);
+            ctx.lineTo(150, centroY);
+            ctx.lineTo(220, yRaw);
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            animacionId = requestAnimationFrame(dibujarFrame);
+        }
+
+        window.onload = ejecutarModelo;
+
+    </script>
+</body>
+</html>
